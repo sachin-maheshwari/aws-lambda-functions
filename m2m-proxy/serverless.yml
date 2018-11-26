@@ -6,7 +6,7 @@ provider:
   timeout: 15
   environment:
    REDIS_URL: "redis://localhost:6379"
-   DEFAULT_TOKEN_CACHE_TIME: 86400000
+   DEFAULT_TOKEN_CACHE_TIME: 86400
 
 stage: dev   
 
