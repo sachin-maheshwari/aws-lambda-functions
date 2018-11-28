@@ -7,7 +7,7 @@ exports.handler = (event, context, callback) => {
     let redisUrl = process.env.REDIS_URL
     let auth0Payload = {}
     let cacheKey = ''
-    let tokenCacheTime = process.env.DEFAULT_TOKEN_CACHE_TIME || 86400000
+    let tokenCacheTime = process.env.DEFAULT_TOKEN_CACHE_TIME || 86400
     let options = {}
     if (!_.isEmpty(event['body'])) {
         auth0Payload = typeof event['body'] === 'string' ? JSON.parse(event['body']) : event['body']
@@ -44,10 +44,21 @@ exports.handler = (event, context, callback) => {
             redisClient.get(cacheKey, function (err, token) {
                 // todo err implementation 
                 if (token != null) {
-                    successResponse.body = JSON.stringify({access_token: token.toString()})                    
-                    callback(null, successResponse)
-                    redisClient.quit()
-                } else {
+                    console.log("Fetched from Redis Cache for cache key: ", cacheKey)
+                    //successResponse.body = JSON.stringify({ access_token: token.toString() })
+                    redisClient.ttl(cacheKey, function (err, ttl) {
+                        if (ttl != null) {
+                            successResponse.body = JSON.stringify({ access_token: token.toString(), expires_in: ttl })
+                            callback(null, successResponse)
+                        }
+                        else if (err) {
+                            errorResponse.body = err
+                            callback(null, errorResponse)
+                        }
+                        redisClient.quit()
+                    })
+                }
+                else {
                     request.post(options, function (error, response, body) {
                         if (error) {
                             errorResponse.body = error
@@ -55,8 +66,13 @@ exports.handler = (event, context, callback) => {
                         }
                         if (body.access_token) {
                             let token = body.access_token
-                            redisClient.set(cacheKey, token, 'EX', tokenCacheTime)
-                            successResponse.body = JSON.stringify({access_token: token.toString()})
+                            let ttl = tokenCacheTime
+                            if (body.expires_in) {
+                                ttl = body.expires_in - 1 // less 1 sec for safer side
+                            }
+                            redisClient.set(cacheKey, token, 'EX', ttl)
+                            console.log("Fetched from Auth0 for cache key: ", cacheKey)
+                            successResponse.body = JSON.stringify({ access_token: token.toString(), expires_in: ttl - 1 }) // less 1 sec for safer side  
                             //close redis connection                           
                             callback(null, successResponse)
                         }
